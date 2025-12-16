@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "discord.js": "^14.15.3",
+    "dotenv": "^17.2.3",
     "shelljs": "^0.8.5"
   },
   "devDependencies": {
