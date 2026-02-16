@@ -18,18 +18,18 @@ module.exports = {
     if (action === 'start') {
       exec('docker start minecraft', (err) => {
         if (err) {
-          return interaction.reply('❌ Failed to start server');
+          return interaction.reply('Failed to start server');
         }
-        interaction.reply('✅ Minecraft server started');
+        interaction.reply('Minecraft server started');
       });
     }
 
     if (action === 'stop') {
       exec('docker stop minecraft', (err) => {
         if (err) {
-          return interaction.reply('❌ Failed to stop server');
+          return interaction.reply('Failed to stop server');
         }
-        interaction.reply('🛑 Minecraft server stopped');
+        interaction.reply('Minecraft server stopped');
       });
     }
 
@@ -37,9 +37,9 @@ module.exports = {
       exec('docker ps --filter "name=minecraft" --format "{{.Status}}"',
         (err, stdout) => {
           if (!stdout) {
-            interaction.reply('❌ Server is offline');
+            interaction.reply('Server is offline');
           } else {
-            interaction.reply(`🟢 Server status: ${stdout}`);
+            interaction.reply(`Server status: ${stdout}`);
           }
         });
     }
