@@ -1,5 +1,8 @@
 require('dotenv').config();
 
+const { MessageFlags } = require('discord.js');
+const { isAllowed } = require('./utils/db');
+const PUBLIC_COMMANDS = ['ping'];   // commands anyone can use
 const fs = require('node:fs');
 const path = require('node:path');
 const { Client, Collection, Events, GatewayIntentBits } = require('discord.js');
@@ -38,6 +41,12 @@ client.on(Events.InteractionCreate, async interaction => {
 	}
 
 	try {
+		if (!PUBLIC_COMMANDS.includes(interaction.commandName) && !isAllowed(interaction.user.id)) {
+			return interaction.reply({
+				content: "You don't have permission to use this command.",
+				flags: MessageFlags.Ephemeral,
+			});
+		}
 		await command.execute(interaction);
 	} catch (error) {
 		console.error(error);
