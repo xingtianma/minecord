@@ -1,3 +1,5 @@
+//removes commands from whatever guild is set in .env
+
 require('dotenv').config();
 const { REST, Routes } = require('discord.js');
 

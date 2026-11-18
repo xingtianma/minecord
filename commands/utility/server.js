@@ -4,6 +4,7 @@ const AMP_URL = process.env.AMP_URL?.replace(/\/$/, '');
 const AMP_USER = process.env.AMP_USER;
 const AMP_PASS = process.env.AMP_PASS;
 const AMP_INSTANCE_NAME = process.env.AMP_INSTANCE;
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Direct AMP API helper — bypasses the buggy @neuralnexus/ampapi library
 async function ampCall(endpoint, data = {}) {
@@ -120,8 +121,42 @@ module.exports = {
       const api = await getInstanceAPI();
 
       if (action === 'start') {
-        await api.Core.Start();
-        await interaction.editReply('Minecraft server starting...')
+        const { State } = await api.Core.GetStatus();
+        // console.log('Start command, initial state:', State);
+
+        if (State === 20) {
+          return interaction.editReply('Server is already online.');
+        }
+
+        const starting = [5, 7, 10, 30];
+        const busy = [40, 45, 70, 75, 80];
+
+        if (busy.includes(State)) {
+          return interaction.editReply(`Server is ${STATE_MAP[State]} right now. Try again in a moment.`);
+        }
+
+        if (starting.includes(State)) {
+          await interaction.editReply('Server is already starting...');
+        } else {
+          await api.Core.Start();
+          await interaction.editReply('Minecraft server starting...');
+        }
+
+        // Check every 5 seconds, for up to 3 minutes
+        const deadline = Date.now() + 3 * 60 * 1000;
+        while (Date.now() < deadline) {
+          await wait(5000);
+          const { State: current } = await api.Core.GetStatus();
+
+          if (current === 20) {
+            return interaction.editReply('Minecraft server started! You can join now.');
+          }
+          if (current === 200) {
+            return interaction.editReply('Minecraft server failed to start. Check the AMP console.');
+          }
+        }
+
+        return interaction.editReply('Server is taking longer than usual to start. Use `/server status` to check on it.');
       }
       if (action === 'stop') {
         await api.Core.Stop();
