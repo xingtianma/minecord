@@ -80,15 +80,25 @@ async function getInstanceAPI() {
 }
 
 const STATE_MAP = {
-  0: 'Stopped',
-  5: 'Pre-start',
-  7: 'Configuring',
-  10: 'Ready / Running',
-  15: 'Restarting',
-  20: 'Stopping',
-  25: 'Pre-start (custom)',
-  30: 'Maintenance',
-  35: 'Indeterminate',
+  [-1]: 'in an undefined state',
+  0: 'offline',
+  5: 'preparing to start',
+  7: 'configuring',
+  10: 'starting',
+  20: 'online',
+  30: 'restarting',
+  40: 'stopping',
+  45: 'preparing to sleep',
+  50: 'sleeping (it wakes up when someone joins)',
+  60: 'waiting',
+  70: 'installing',
+  75: 'preparing to update',
+  80: 'updating',
+  100: 'waiting for input in AMP',
+  200: 'in a failed state',
+  250: 'suspended',
+  600: 'in maintenance',
+  999: 'in an indeterminate state',
 };
 
 module.exports = {
@@ -119,17 +129,14 @@ module.exports = {
       }
       if (action === 'status') {
         const status = await api.Core.GetStatus();
+        const state = STATE_MAP[status.State] ?? `in an unknown state (${status.State})`;
+        let reply = `Server is ${state}.`;
 
-        const messages = {
-          0: 'Server is offline...',
-          5: 'Server is starting...',
-          7: 'Server is configuring...',
-          10: 'Server is online...',
-          15: 'Server is restarting...',
-          20: 'Server is stopping...',
-        };
+        const users = status.Metrics?.['Active Users'];
+        if (status.State === 20 && users) {
+          reply += ` Players: ${users.RawValue}/${users.MaxValue}`;
+        }
 
-        const reply = messages[status.State] ?? 'Server status unknown';
         await interaction.editReply(reply);
       }
     }
