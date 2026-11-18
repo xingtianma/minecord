@@ -8,6 +8,7 @@ A Discord bot that lets you manage a Minecraft server from your Discord server u
 - **Smart start**: won't send a second start if the server is already online or starting, and edits its reply from "starting..." to "started!" once the server is up
 - **Status checks** that show the server's real state (online, sleeping, starting, stopping, etc.) and the player count when online
 - **Sleep mode aware**: if AMP has put the server to sleep, `/server start` wakes it up
+- **Access control**: only the owner and users on an allow list (stored in SQLite) can use the bot's commands
 - Built with [discord.js](https://discord.js.org/) v14 slash commands
 
 ## How It Works
@@ -26,10 +27,15 @@ The bot logs in to AMP with the credentials in `.env`, finds the instance named 
 | `/server start` | Starts (or wakes) the Minecraft server, then updates the message when it's online |
 | `/server stop` | Stops the Minecraft server |
 | `/server status` | Shows the server's current state, plus the player count when online |
+| `/access add <user>` | Gives a user access to the bot (owner only) |
+| `/access remove <user>` | Removes a user's access (owner only) |
+| `/access list` | Lists the owner and every user with access (owner only) |
+
+All commands except `/ping` require access. See [Access Control](#access-control).
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v20+
+- [Node.js](https://nodejs.org/) v22+ (v24 LTS recommended). `better-sqlite3` requires Node 22 or newer, and crashes with a segmentation fault on older versions.
 - An [AMP](https://cubecoders.com/AMP) installation with a Minecraft Java Edition instance
 - An AMP user account with access to that instance
 - A [Discord bot application](https://discord.com/developers/applications)
@@ -61,6 +67,7 @@ Create a `.env` file in the project root:
 DISCORD_TOKEN=your_bot_token
 CLIENT_ID=your_application_id
 GUILD_ID=your_discord_server_id
+OWNER_ID=your_discord_user_id
 
 # AMP
 AMP_URL=http://localhost:8080
@@ -70,11 +77,12 @@ AMP_INSTANCE=Minecraft01
 ```
 
 - `CLIENT_ID` is the **Application ID** from the Developer Portal's General Information page, not the Public Key.
+- `OWNER_ID` is your own Discord user ID. To copy it, turn on **User Settings → Advanced → Developer Mode**, then right-click your name and choose **Copy User ID**.
 - `AMP_URL` is the address of the AMP panel. Use `localhost` if AMP runs on the same machine as the bot.
 - `AMP_USER` / `AMP_PASS` are your **AMP panel** login, not your Linux login.
 - `AMP_INSTANCE` must match the instance's internal name exactly. See [Finding the instance name](#finding-the-instance-name).
 
-`.env` is git-ignored. Never commit it, since it contains your bot token and AMP password.
+`.env` and `data/` are git-ignored. Never commit them, since they contain your bot token, AMP password, and the access list.
 
 ### 4. Deploy slash commands
 
@@ -91,6 +99,24 @@ node index.js
 ```
 
 The bot only runs while this terminal is open. To keep it running permanently, see [Running as a service](#running-as-a-service).
+
+## Access Control
+
+Commands are restricted to the bot owner and an allow list stored in a SQLite database at `data/minecord.db`. The folder and database are created automatically the first time the bot starts.
+
+- **The owner** (`OWNER_ID` in `.env`) always has access and is the only one who can use `/access`. The owner isn't stored in the database, so you can't lock yourself out, even if the database is deleted.
+- **Other users** get access with `/access add @user` and lose it with `/access remove @user`.
+- **Public commands** are listed in `PUBLIC_COMMANDS` in `index.js` (currently just `ping`). Anyone can use those.
+
+The check runs in `index.js` before every command, so new commands are protected automatically.
+
+To view the table directly:
+
+```bash
+sqlite3 data/minecord.db "SELECT * FROM allowed_users;"
+```
+
+Discord IDs are stored as `TEXT`, because they're too large for JavaScript to represent exactly as numbers. All queries use `?` placeholders to prevent SQL injection.
 
 ## Running as a Service
 
@@ -162,13 +188,17 @@ minecord/
 ├── index.js                          # Bot entry point: loads commands & handles interactions
 ├── commands/
 │   └── utility/
+│       ├── access.js                 # /access add|remove|list (owner only)
 │       ├── ping.js                   # /ping command
 │       └── server.js                 # /server start|stop|status (talks to AMP)
 ├── utils/
+│   ├── db.js                         # SQLite database and access-list helpers
 │   ├── deploy-commands.js            # Register slash commands with Discord
 │   ├── clear-global-commands.js      # Remove global commands
 │   ├── delete-commands.js            # Remove all slash commands
 │   └── refresh-commands.js           # Delete + re-deploy commands
+├── data/
+│   └── minecord.db                   # Access list database (git-ignored, created automatically)
 ├── .env                              # Credentials (git-ignored)
 ├── .gitignore
 └── package.json
@@ -237,6 +267,13 @@ AMP can put Minecraft to sleep when nobody is playing. While sleeping, the serve
 | `AMP HTTP ...` or connection errors | AMP isn't running, or `AMP_URL` is wrong |
 | Commands appear twice in Discord | Old global commands exist. Run `node utils/clear-global-commands.js`. |
 | `Connection refused` in Minecraft | The server is stopped or still waking up. Check `/server status`. |
+| Bot crashes with `status=11` (segmentation fault) | Node is older than v22. Upgrade Node, then `rm -rf node_modules && npm install`. |
+| "You don't have permission to use this command." | The user isn't on the allow list. The owner can run `/access add @user`. |
+| A new command doesn't appear in Discord | Run `node utils/deploy-commands.js`, then refresh Discord (Ctrl+R on Windows, Cmd+R on Mac). |
+
+## Backups
+
+`data/minecord.db` and `.env` exist only on the server, not in Git. If the bot runs in a Proxmox container, back up the whole container (select it, go to **Backup**, then **Backup now**), or schedule automatic backups under **Datacenter → Backup**.
 
 ## Setting Up the Discord Bot
 
