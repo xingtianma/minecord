@@ -56,9 +56,26 @@ async function getTargetId() {
   return targets[0].InstanceId ?? targets[0].InstanceID;
 }
 
+// Log in to one instance and return a function for calling its API
+async function instanceApi(instanceId) {
+  const sessionId = await login();
+  const base = `ADSModule/Servers/${instanceId}/API`;
+
+  const instLogin = await ampCall(`${base}/Core/Login`, {
+    username: AMP_USER,
+    password: AMP_PASS,
+    token: '',
+    rememberMe: false,
+    SESSIONID: sessionId,
+  });
+  if (!instLogin.success) throw new Error(`Instance login failed for ${instanceId}.`);
+
+  return (endpoint, data = {}) => ampCall(`${base}/${endpoint}`, { ...data, SESSIONID: instLogin.sessionID });
+}
+
 module.exports = {
   findInstance,
-
+  instanceApi,
   // Reading
   getInstances:           () => ads('GetInstances'),
   getInstanceStatuses:    () => ads('GetInstanceStatuses'),
@@ -79,4 +96,5 @@ module.exports = {
     AutoConfigure: true,   // let AMP choose the name, port, etc.
   }),
   deleteInstance: name => ads('DeleteInstance', { InstanceName: name }),
+  startInstance:  name => ads('StartInstance', { InstanceName: name }),
 };

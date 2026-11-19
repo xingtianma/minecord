@@ -66,6 +66,17 @@ const mapStmts = {
   `),
 };
 
+// Temporary servers created by /play
+const instanceStmts = {
+  add: db.prepare(`
+    INSERT INTO instances (instance_id, instance_name, map_name, owner_id, port)
+    VALUES (@instance_id, @instance_name, @map_name, @owner_id, @port)
+  `),
+  list:   db.prepare('SELECT * FROM instances ORDER BY created_at'),
+  count:  db.prepare('SELECT COUNT(*) AS n FROM instances'),
+  remove: db.prepare('DELETE FROM instances WHERE instance_id = ?'),
+};
+
 module.exports = {
   // Access
   isAllowed:  id => id === process.env.OWNER_ID || !!stmts.isAllowed.get(id),
@@ -79,4 +90,10 @@ module.exports = {
   listMaps:  () => mapStmts.list.all(),
   removeMap: name => mapStmts.remove.run(name).changes > 0,
   updateMap: changes => mapStmts.update.run(changes).changes > 0,
+
+  // Temporary servers
+  addInstance:    inst => instanceStmts.add.run(inst),
+  listInstances:  () => instanceStmts.list.all(),
+  countInstances: () => instanceStmts.count.get().n,
+  removeInstance: id => instanceStmts.remove.run(id).changes > 0,
 };
