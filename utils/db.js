@@ -75,6 +75,16 @@ const instanceStmts = {
   list:   db.prepare('SELECT * FROM instances ORDER BY created_at'),
   count:  db.prepare('SELECT COUNT(*) AS n FROM instances'),
   remove: db.prepare('DELETE FROM instances WHERE instance_id = ?'),
+
+  // For cleanup: each server's age, and how long it's been asleep, in minutes
+  listWithAges: db.prepare(`
+    SELECT *,
+      (julianday('now') - julianday(created_at)) * 1440     AS age_minutes,
+      (julianday('now') - julianday(sleeping_since)) * 1440 AS asleep_minutes
+    FROM instances
+  `),
+  markSleeping:  db.prepare("UPDATE instances SET sleeping_since = datetime('now') WHERE instance_id = ? AND sleeping_since IS NULL"),
+  clearSleeping: db.prepare('UPDATE instances SET sleeping_since = NULL WHERE instance_id = ?'),
 };
 
 module.exports = {
@@ -96,4 +106,7 @@ module.exports = {
   listInstances:  () => instanceStmts.list.all(),
   countInstances: () => instanceStmts.count.get().n,
   removeInstance: id => instanceStmts.remove.run(id).changes > 0,
+  listInstancesWithAges: () => instanceStmts.listWithAges.all(),
+  markSleeping:   id => instanceStmts.markSleeping.run(id),
+  clearSleeping:  id => instanceStmts.clearSleeping.run(id),
 };

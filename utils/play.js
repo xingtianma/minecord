@@ -17,6 +17,9 @@ function toAmpSettings(map) {
     const settings = {
         'MinecraftModule.Minecraft.ReleaseStream': '3',   // Specific Version
         'MinecraftModule.Minecraft.SpecificVersion': `${map.mc_version} (release)`,
+        'MinecraftModule.Limits.SleepMode': 'true',
+        'MinecraftModule.Limits.SleepDelayMinutes': '5',
+        'MinecraftModule.Limits.SleepOnStart': 'false',
     };
     if (props['enable-command-block']) {
         settings['MinecraftModule.Game.AllowCommandBlocks'] = props['enable-command-block'];
@@ -86,7 +89,7 @@ async function waitForState(call, isDone, timeoutMs, label) {
     throw new Error(`Timed out while ${label}.`);
 }
 
-async function playMap(map, { friendlyName, onProgress = () => {}, onCreated = () => {} }) {
+async function playMap(map, { friendlyName, onProgress = () => { }, onCreated = () => { } }) {
     // 1. Create the server
     onProgress('Creating server...');
     const existing = await amp.findInstance(i => /minecraft/i.test(i.Module ?? ''));

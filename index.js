@@ -10,8 +10,27 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
-
 const token = process.env.DISCORD_TOKEN;
+const { runCleanup } = require('./utils/cleanup');
+
+let cleanupRunning = false;
+function scheduleCleanup() {
+  setInterval(async () => {
+    if (cleanupRunning) return;   // don't start a new check while one is still going
+    cleanupRunning = true;
+    try {
+      await runCleanup({
+        dryRun: false,
+        // Only log actual actions, not "keeping" or "waiting" every minute
+        log: msg => { if (/deleting|removing|couldn't/.test(msg)) console.log(`[cleanup] ${msg}`); },
+      });
+    } catch (err) {
+      console.error('[cleanup] failed:', err.message);
+    } finally {
+      cleanupRunning = false;
+    }
+  }, 60_000);
+}
 
 for (const folder of commandFolders) {
 	const commandsPath = path.join(foldersPath, folder);
@@ -29,6 +48,7 @@ for (const folder of commandFolders) {
 
 client.once(Events.ClientReady, readyClient => {
 	console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+	scheduleCleanup();
 });
 
 client.on(Events.InteractionCreate, async interaction => {
