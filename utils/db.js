@@ -17,9 +17,11 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS maps (
     name       TEXT PRIMARY KEY,
-    file_path  TEXT NOT NULL,
-    mc_version TEXT,
+    file_name  TEXT NOT NULL,
+    world_root TEXT NOT NULL,
+    mc_version TEXT NOT NULL,
     mode       TEXT NOT NULL DEFAULT 'reset' CHECK (mode IN ('reset', 'persistent')),
+    properties TEXT NOT NULL DEFAULT '{}',
     added_by   TEXT NOT NULL,
     added_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -36,24 +38,45 @@ db.exec(`
   );
 `);
 
+// Access list
 const stmts = {
   isAllowed: db.prepare('SELECT 1 FROM allowed_users WHERE discord_id = ?'),
-  add: db.prepare('INSERT OR IGNORE INTO allowed_users (discord_id, added_by) VALUES (?, ?)'),
-  remove: db.prepare('DELETE FROM allowed_users WHERE discord_id = ?'),
-  list: db.prepare('SELECT discord_id, added_at FROM allowed_users ORDER BY added_at'),
-  addMap: db.prepare('INSERT INTO maps (name, file_path, mc_version, mode, added_by) VALUES (?, ?, ?, ?, ?)'),
-  getMap: db.prepare('SELECT * FROM maps WHERE name = ?'),
-  listMaps: db.prepare('SELECT name, mode, mc_version FROM maps ORDER BY name'),
-  addInstance: db.prepare('INSERT INTO instances (instance_id, instance_name, map_name, owner_id, port) VALUES (?, ?, ?, ?, ?)'),
-  tempInstances: db.prepare('SELECT * FROM instances WHERE temporary = 1'),
-  markSleeping: db.prepare("UPDATE instances SET sleeping_since = datetime('now') WHERE instance_id = ?"),
-  clearSleeping: db.prepare('UPDATE instances SET sleeping_since = NULL WHERE instance_id = ?'),
-  removeInstance: db.prepare('DELETE FROM instances WHERE instance_id = ?'),
+  add:       db.prepare('INSERT OR IGNORE INTO allowed_users (discord_id, added_by) VALUES (?, ?)'),
+  remove:    db.prepare('DELETE FROM allowed_users WHERE discord_id = ?'),
+  list:      db.prepare('SELECT discord_id, added_at FROM allowed_users ORDER BY added_at'),
+};
+
+// Maps
+const mapStmts = {
+  add: db.prepare(`
+    INSERT INTO maps (name, file_name, world_root, mc_version, mode, properties, added_by)
+    VALUES (@name, @file_name, @world_root, @mc_version, @mode, @properties, @added_by)
+  `),
+  get:    db.prepare('SELECT * FROM maps WHERE name = ?'),
+  list:   db.prepare('SELECT name, mc_version, mode FROM maps ORDER BY name'),
+  remove: db.prepare('DELETE FROM maps WHERE name = ?'),
+   update: db.prepare(`
+    UPDATE maps SET
+      file_name  = COALESCE(@file_name,  file_name),
+      world_root = COALESCE(@world_root, world_root),
+      mc_version = COALESCE(@mc_version, mc_version),
+      mode       = COALESCE(@mode,       mode),
+      properties = COALESCE(@properties, properties)
+    WHERE name = @name
+  `),
 };
 
 module.exports = {
-  isAllowed: id => id === process.env.OWNER_ID || !!stmts.isAllowed.get(id),
-  addUser: (id, by) => stmts.add.run(id, by).changes > 0,
+  // Access
+  isAllowed:  id => id === process.env.OWNER_ID || !!stmts.isAllowed.get(id),
+  addUser:    (id, by) => stmts.add.run(id, by).changes > 0,
   removeUser: id => stmts.remove.run(id).changes > 0,
-  listUsers: () => stmts.list.all(),
+  listUsers:  () => stmts.list.all(),
+
+  // Maps
+  addMap:    map => mapStmts.add.run(map),
+  getMap:    name => mapStmts.get.get(name),
+  listMaps:  () => mapStmts.list.all(),
+  removeMap: name => mapStmts.remove.run(name).changes > 0,
+  updateMap: changes => mapStmts.update.run(changes).changes > 0,
 };
