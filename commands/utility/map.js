@@ -3,8 +3,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { MAPS_DIR, inspectMap } = require('../../utils/maps');
 const { addMap, getMap, listMaps, removeMap, updateMap } = require('../../utils/db');
-
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const ephemeral = { flags: MessageFlags.Ephemeral };
+const MAX_UPLOAD_MB = 500;
 
 // Turn "a=true,b=easy" into { a: 'true', b: 'easy' }
 function parseProperties(text) {
@@ -22,14 +24,51 @@ function parseProperties(text) {
   return props;
 }
 
+// Format a map's settings for display
+function formatSettings(propertiesJson) {
+  return Object.entries(JSON.parse(propertiesJson))
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ') || 'none';
+}
+
+// Download a Discord attachment into the maps folder and return its file name
+async function saveAttachment(attachment) {
+  const fileName = path.basename(attachment.name).replace(/[^A-Za-z0-9._-]/g, '_');
+
+  if (!fileName.toLowerCase().endsWith('.zip')) {
+    throw new Error('The attachment must be a `.zip` file.');
+  }
+  if (attachment.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    throw new Error(`The file is over ${MAX_UPLOAD_MB} MB.`);
+  }
+
+  const target = path.join(MAPS_DIR, fileName);
+  if (fs.existsSync(target)) {
+    throw new Error(`A file named \`${fileName}\` is already in the maps folder. Use the \`file\` option to register it, or rename the zip.`);
+  }
+
+  const res = await fetch(attachment.url);
+  if (!res.ok) throw new Error(`Couldn't download the attachment (HTTP ${res.status}).`);
+
+  fs.mkdirSync(MAPS_DIR, { recursive: true });
+  try {
+    await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(target));
+  } catch (err) {
+    fs.rmSync(target, { force: true });   // don't leave a half-downloaded file
+    throw new Error(`The download failed: ${err.message}`);
+  }
+  return fileName;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('map')
     .setDescription('Manage saved maps')
-    .addSubcommand(sub => sub.setName('add').setDescription('Save a map from the maps folder (owner only)')
+    .addSubcommand(sub => sub.setName('add').setDescription('Save a map from an attachment or the maps folder (owner only)')
       .addStringOption(opt => opt.setName('name').setDescription('Short name, e.g. mario-party').setRequired(true))
-      .addStringOption(opt => opt.setName('file').setDescription('Zip file name in the maps folder').setRequired(true))
       .addStringOption(opt => opt.setName('version').setDescription('Minecraft version, e.g. 1.20.1').setRequired(true))
+      .addAttachmentOption(opt => opt.setName('attachment').setDescription('The map as a .zip file'))
+      .addStringOption(opt => opt.setName('file').setDescription('Or: a zip already in the maps folder'))
       .addStringOption(opt => opt.setName('mode').setDescription('reset = fresh every time, persistent = keep progress')
         .addChoices({ name: 'reset', value: 'reset' }, { name: 'persistent', value: 'persistent' }))
       .addStringOption(opt => opt.setName('properties')
@@ -46,6 +85,7 @@ module.exports = {
       .addStringOption(opt => opt.setName('properties')
         .setDescription('Replaces ALL settings, e.g. enable-command-block=true. Use "none" to clear.'))
       .addStringOption(opt => opt.setName('file').setDescription('New zip file name in the maps folder'))),
+
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
@@ -83,8 +123,8 @@ module.exports = {
         ...ephemeral,
       });
     }
-    
-        if (sub === 'edit') {
+
+    if (sub === 'edit') {
       const name = interaction.options.getString('name').toLowerCase();
       const version = interaction.options.getString('version');
       const mode = interaction.options.getString('mode');
@@ -119,49 +159,64 @@ module.exports = {
         return interaction.reply({ content: err.message, ...ephemeral });
       }
 
-      updateMap({
-        name,
-        file_name: file,
-        world_root: worldRoot,
-        mc_version: version,
-        mode,
-        properties,
-      });
+      updateMap({ name, file_name: file, world_root: worldRoot, mc_version: version, mode, properties });
 
-      // Show the map as it is now
       const map = getMap(name);
-      const settings = Object.entries(JSON.parse(map.properties)).map(([k, v]) => `${k}=${v}`).join(', ') || 'none';
       return interaction.reply({
-        content: `Updated **${name}** (Minecraft ${map.mc_version}, ${map.mode}).\nFile: \`${map.file_name}\`\nWorld folder: \`${map.world_root || '(top of zip)'}\`\nSettings: ${settings}`,
+        content: `Updated **${name}** (Minecraft ${map.mc_version}, ${map.mode}).\nFile: \`${map.file_name}\`\nWorld folder: \`${map.world_root || '(top of zip)'}\`\nSettings: ${formatSettings(map.properties)}`,
         ...ephemeral,
       });
     }
 
     if (sub === 'add') {
+      // Downloading can take a while, so reply "thinking..." first
+      await interaction.deferReply(ephemeral);
+      const reply = content => interaction.editReply({ content });
+
       const name = interaction.options.getString('name').toLowerCase();
-      const file = path.basename(interaction.options.getString('file'));
       const version = interaction.options.getString('version');
+      const attachment = interaction.options.getAttachment('attachment');
+      const fileOption = interaction.options.getString('file');
       const mode = interaction.options.getString('mode') ?? 'reset';
 
+      // Check everything cheap before downloading anything
+      if (!!attachment === !!fileOption) {
+        return reply('Give either an `attachment` or a `file` name (one, not both).');
+      }
       if (!/^[a-z0-9-]{1,32}$/.test(name)) {
-        return interaction.reply({ content: 'Names can only use lowercase letters, numbers and dashes (max 32).', ...ephemeral });
+        return reply('Names can only use lowercase letters, numbers and dashes (max 32).');
       }
       if (!/^\d+\.\d+(\.\d+)?$/.test(version)) {
-        return interaction.reply({ content: 'The version should look like `1.20.1`.', ...ephemeral });
-      }
-      if (!fs.existsSync(path.join(MAPS_DIR, file))) {
-        return interaction.reply({ content: `No file named \`${file}\` in the maps folder. Try \`/map files\`.`, ...ephemeral });
+        return reply('The version should look like `1.20.1`.');
       }
       if (getMap(name)) {
-        return interaction.reply({ content: `A map named **${name}** already exists.`, ...ephemeral });
+        return reply(`A map named **${name}** already exists.`);
       }
 
-      let properties, worldRoot;
+      let properties;
       try {
         properties = parseProperties(interaction.options.getString('properties'));
+      } catch (err) {
+        return reply(err.message);
+      }
+
+      // Get the zip, from the attachment or the maps folder
+      let file, downloaded = false, worldRoot;
+      try {
+        if (attachment) {
+          file = await saveAttachment(attachment);
+          downloaded = true;
+        } else {
+          file = path.basename(fileOption);
+          if (!fs.existsSync(path.join(MAPS_DIR, file))) {
+            return reply(`No file named \`${file}\` in the maps folder. Try \`/map files\`.`);
+          }
+        }
         ({ worldRoot } = inspectMap(file));
       } catch (err) {
-        return interaction.reply({ content: err.message, ...ephemeral });
+        // A bad upload shouldn't be left behind in the maps folder
+        if (downloaded) fs.rmSync(path.join(MAPS_DIR, file), { force: true });
+        return reply(err.message);
       }
 
       addMap({
@@ -174,11 +229,7 @@ module.exports = {
         added_by: interaction.user.id,
       });
 
-      const settings = Object.entries(properties).map(([k, v]) => `${k}=${v}`).join(', ') || 'none';
-      return interaction.reply({
-        content: `Saved **${name}** (Minecraft ${version}, ${mode}).\nWorld folder: \`${worldRoot || '(top of zip)'}\`\nSettings: ${settings}`,
-        ...ephemeral,
-      });
+      return reply(`Saved **${name}** (Minecraft ${version}, ${mode}).\nFile: \`${file}\`\nWorld folder: \`${worldRoot || '(top of zip)'}\`\nSettings: ${formatSettings(JSON.stringify(properties))}`);
     }
   },
 };
