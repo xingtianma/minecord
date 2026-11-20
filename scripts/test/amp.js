@@ -1,5 +1,5 @@
-require('dotenv').config();
-const amp = require('./amp');
+require('dotenv').config({ path: require('node:path').join(__dirname, '..', '..', '.env') });
+const amp = require('../../lib/amp');
 
 (async () => {
   try {

@@ -89,7 +89,7 @@ MC_ADDRESS=your.public.ip.or.domain
 ### 3. Deploy slash commands and run
 
 ```bash
-node utils/deploy-commands.js
+node scripts/deploy-commands.js
 node index.js
 ```
 
@@ -132,8 +132,8 @@ Don't run a second copy of the bot (for example on your PC) while the service is
 
 | What changed | What to run |
 |--------------|-------------|
-| Code inside a command, `utils/`, `index.js`, or `.env` | `systemctl restart minecord` |
-| A command was added, or a command's name, description, or options changed | `node utils/deploy-commands.js`, then restart |
+| Code inside `commands/`, `lib/`, `index.js`, or `.env` | `systemctl restart minecord` |
+| A command was added, or a command's name, description, or options changed | `node scripts/deploy-commands.js`, then restart |
 | An npm package was added | `npm install`, then restart |
 
 ## Access Control
@@ -157,7 +157,7 @@ A saved map is a zip in `maps/` plus a database record describing how to run it:
 
 ### Adding a map
 
-**From Discord:** `/map add` with `name`, `version`, and the zip as `attachment`. Uploads are limited by your Discord account's upload limit (10 MB on free accounts) and by the bot's own limit (`MAX_UPLOAD_MB` in `map.js`, 500 MB by default).
+**From Discord:** `/map add` with `name`, `version`, and the zip as `attachment`. Uploads are limited by your Discord account's upload limit (10 MB on free accounts) and by the bot's own limit (`MAX_UPLOAD_MB` in `commands/minecraft/map.js`, 500 MB by default).
 
 **From the server:** for big files, copy the zip into `maps/` first (drag it onto the folder in VS Code's Remote-SSH explorer, or use `scp`), then `/map add` with `name`, `version`, and `file`.
 
@@ -176,7 +176,7 @@ Check the map's download page for the Minecraft version and any required setting
 
 If anything fails partway, the half-built server is deleted automatically.
 
-Only one temporary server can exist at a time (`MAX_TEMP_SERVERS` in `commands/utility/play.js`), to keep RAM in check.
+Only one temporary server can exist at a time (`MAX_TEMP_SERVERS` in `commands/minecraft/play.js`), to keep RAM in check.
 
 ### Cleanup
 
@@ -208,20 +208,24 @@ If you'd rather not open ports, tools like Tailscale or playit.gg work without r
 ```
 minecord/
 ├── index.js                     # Entry point: loads commands, permission check, cleanup schedule
-├── commands/utility/
-│   ├── access.js                # /access
-│   ├── map.js                   # /map
-│   ├── ping.js                  # /ping
-│   ├── play.js                  # /play
-│   └── server.js                # /server (main server)
-├── utils/
-│   ├── amp.js                   # AMP API helpers (login, create, delete, settings)
+├── commands/                    # One file per slash command (loaded from any subfolder)
+│   ├── general/ping.js          # /ping
+│   ├── admin/access.js          # /access
+│   └── minecraft/
+│       ├── server.js            # /server (main server)
+│       ├── map.js               # /map
+│       └── play.js              # /play
+├── lib/                         # Modules the bot uses at runtime
+│   ├── amp.js                   # AMP API helpers (login, create, delete, settings, state codes)
 │   ├── cleanup.js               # Deletes sleeping temporary servers
+│   ├── commands.js              # Finds and loads command files (used by index.js and deploy)
 │   ├── db.js                    # SQLite tables and queries
-│   ├── deploy-commands.js       # Registers slash commands with Discord
 │   ├── maps.js                  # Reads map zips (finds level.dat)
-│   ├── play.js                  # Builds a temporary server from a map
-│   └── test-*.js                # Manual test scripts (see below)
+│   └── play-map.js              # Builds a temporary server from a map
+├── scripts/                     # Run by hand, never by the bot
+│   ├── deploy-commands.js       # Registers slash commands with Discord
+│   ├── clear-guild-commands.js  # Removes guild-scoped commands for GUILD_ID
+│   └── test/                    # Manual test scripts (see below)
 ├── data/minecord.db             # Database (git-ignored, created automatically)
 ├── maps/                        # Saved map zips (git-ignored)
 ├── .env                         # Credentials (git-ignored)
@@ -232,12 +236,12 @@ minecord/
 
 | Script | What it does |
 |--------|--------------|
-| `node utils/test-amp` | Lists AMP instances (read-only) |
-| `node utils/test-map <zip>` | Shows where the world is inside a zip in `maps/` (read-only) |
-| `node utils/test-settings` | Prints key settings of `Minecraft01` (read-only) |
-| `node utils/test-play <map>` | Builds a temporary server without Discord |
-| `node utils/test-create delete <InstanceName>` | Deletes a server whose display name starts with `minecord-test-` |
-| `node utils/test-cleanup` | Runs the cleanup check in trial mode (deletes nothing) |
+| `node scripts/test/amp` | Lists AMP instances (read-only) |
+| `node scripts/test/map <zip>` | Shows where the world is inside a zip in `maps/` (read-only) |
+| `node scripts/test/settings` | Prints key settings of `Minecraft01` (read-only) |
+| `node scripts/test/play <map>` | Builds a temporary server without Discord |
+| `node scripts/test/create delete <InstanceName>` | Deletes a server whose display name starts with `minecord-test-` |
+| `node scripts/test/cleanup` | Runs the cleanup check in trial mode (deletes nothing) |
 
 ## Troubleshooting
 
@@ -246,7 +250,7 @@ minecord/
 | `AMP login failed for user "..."` | `AMP_USER` / `AMP_PASS` are wrong. Use the AMP panel login. |
 | `Instance "..." not found` | `AMP_INSTANCE` doesn't match `ampinstmgr list` |
 | Bot crashes with `status=11` | Node is older than v22. Upgrade, then `rm -rf node_modules && npm install`. |
-| A new command doesn't appear | Run `node utils/deploy-commands.js`, then refresh Discord (Ctrl+R / Cmd+R) |
+| A new command doesn't appear | Run `node scripts/deploy-commands.js`, then refresh Discord (Ctrl+R / Cmd+R) |
 | Commands appear twice | Old global commands exist alongside guild commands. Clear the global ones. |
 | `/play` says a server is already running | The one-server limit. Wait for cleanup, or delete the server and its record. |
 | `/play` times out or says AMP is waiting for input | Check the new instance's console in the AMP panel |

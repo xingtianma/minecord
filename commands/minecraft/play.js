@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { getMap, addInstance, countInstances } = require('../../utils/db');
-const { playMap } = require('../../utils/play');
-const amp = require('../../utils/amp');
+const { getMap, addInstance, countInstances } = require('../../lib/db');
+const { playMap } = require('../../lib/play-map');
+const amp = require('../../lib/amp');
 
 const MAX_TEMP_SERVERS = 1;                                  // raise later if RAM allows
 const ADDRESS = process.env.MC_ADDRESS || '192.168.1.236';   // address shown to players

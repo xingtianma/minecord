@@ -1,5 +1,5 @@
-require('dotenv').config();
-const amp = require('./amp');
+require('dotenv').config({ path: require('node:path').join(__dirname, '..', '..', '.env') });
+const amp = require('../../lib/amp');
 
 const TARGET = 'temp01';   // only ever touches this test server
 
@@ -9,15 +9,6 @@ const settings = {
   'MinecraftModule.Game.Difficulty':           '1',                 // Easy
   'MinecraftModule.Game.AllowCommandBlocks':   'true',
 };
-
-function findSettings(obj, found = []) {
-  if (Array.isArray(obj)) obj.forEach(item => findSettings(item, found));
-  else if (obj && typeof obj === 'object') {
-    if (typeof obj.Node === 'string') found.push(obj);
-    else Object.values(obj).forEach(value => findSettings(value, found));
-  }
-  return found;
-}
 
 (async () => {
   try {
@@ -30,7 +21,7 @@ function findSettings(obj, found = []) {
 
     // Read the settings back to confirm they changed
     const spec = await call('Core/GetSettingsSpec');
-    for (const s of findSettings(spec).filter(s => s.Node in settings)) {
+    for (const s of amp.findSettings(spec).filter(s => s.Node in settings)) {
       console.log(`${s.Node} = ${JSON.stringify(s.CurrentValue)}`);
     }
   } catch (err) {

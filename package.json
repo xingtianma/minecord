@@ -1,14 +1,16 @@
 {
-  "name": "discord-bot",
+  "name": "minecord",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "deploy": "node scripts/deploy-commands.js",
+    "clear-guild-commands": "node scripts/clear-guild-commands.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Discord bot that manages Minecraft servers through AMP",
   "dependencies": {
     "@neuralnexus/ampapi": "^1.0.19",
     "adm-zip": "^0.6.1",

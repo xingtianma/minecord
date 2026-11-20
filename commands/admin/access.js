@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { addUser, removeUser, listUsers } = require('../../utils/db');
+const { addUser, removeUser, listUsers } = require('../../lib/db');
 
 module.exports = {
   data: new SlashCommandBuilder()

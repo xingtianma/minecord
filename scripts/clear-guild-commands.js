@@ -1,6 +1,6 @@
 //removes commands from whatever guild is set in .env
 
-require('dotenv').config();
+require('dotenv').config({ path: require('node:path').join(__dirname, '..', '.env') });
 const { REST, Routes } = require('discord.js');
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN);

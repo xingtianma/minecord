@@ -1,8 +1,7 @@
-require('dotenv').config();
-const amp = require('./amp');
+require('dotenv').config({ path: require('node:path').join(__dirname, '..', '..', '.env') });
+const amp = require('../../lib/amp');
 
 const PREFIX = 'minecord-test-';
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function create() {
   // Copy the module name from your existing Minecraft server
@@ -16,11 +15,11 @@ async function create() {
 
   // AMP creates instances in the background, so wait for it to appear
   for (let i = 0; i < 12; i++) {
-    await wait(5000);
+    await amp.wait(5000);
     const inst = await amp.findInstance(x => x.FriendlyName === friendlyName);
     if (inst) {
       console.log(`Created! InstanceName: ${inst.InstanceName}  ID: ${inst.InstanceID}`);
-      console.log(`To delete it: node utils/test-create delete ${inst.InstanceName}`);
+      console.log(`To delete it: node scripts/test/create delete ${inst.InstanceName}`);
       return;
     }
     console.log('Waiting for it to appear...');
@@ -46,7 +45,7 @@ async function remove(name) {
   try {
     if (action === 'create') await create();
     else if (action === 'delete' && name) await remove(name);
-    else console.log('Usage: node utils/test-create create\n       node utils/test-create delete <InstanceName>');
+    else console.log('Usage: node scripts/test/create create\n       node scripts/test/create delete <InstanceName>');
   } catch (err) {
     console.error('Test failed:', err.message);
   }

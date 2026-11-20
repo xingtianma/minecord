@@ -1,8 +1,8 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const fs = require('node:fs');
 const path = require('node:path');
-const { MAPS_DIR, inspectMap } = require('../../utils/maps');
-const { addMap, getMap, listMaps, removeMap, updateMap } = require('../../utils/db');
+const { MAPS_DIR, inspectMap } = require('../../lib/maps');
+const { addMap, getMap, listMaps, removeMap, updateMap } = require('../../lib/db');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const ephemeral = { flags: MessageFlags.Ephemeral };

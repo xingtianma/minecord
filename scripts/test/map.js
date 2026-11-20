@@ -1,8 +1,8 @@
-const { inspectMap } = require('./maps');
+const { inspectMap } = require('../../lib/maps');
 
 const file = process.argv[2];
 if (!file) {
-  console.log('Usage: node utils/test-map <zip file name in maps/>');
+  console.log('Usage: node scripts/test/map <zip file name in maps/>');
   process.exit(1);
 }
 
