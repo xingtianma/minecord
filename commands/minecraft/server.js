@@ -4,6 +4,7 @@ const amp = require('../../lib/amp');
 const { STATE } = amp;
 const AMP_INSTANCE_NAME = process.env.AMP_INSTANCE;
 const START_TIMEOUT_MS = 3 * 60 * 1000;
+const INSTANCE_BOOT_TIMEOUT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
 
 const STATE_LABELS = {
@@ -33,14 +34,51 @@ const STARTING_STATES = [STATE.PRE_START, STATE.CONFIGURING, STATE.STARTING, STA
 // Busy with something else: ask the user to try again later
 const BUSY_STATES = [STATE.STOPPING, STATE.PREPARING_TO_SLEEP, STATE.INSTALLING, STATE.PREPARING_TO_UPDATE, STATE.UPDATING];
 
-// Log in to the main server (AMP_INSTANCE) and return a function for calling its API
-async function mainServerApi() {
+// AMP answers this when the instance itself (not just Minecraft inside it) isn't running
+const isInstanceStopped = err => /Instance Unavailable/i.test(err?.message ?? '');
+
+async function findMainInstance() {
   const inst = await amp.findInstance(i => i.InstanceName === AMP_INSTANCE_NAME);
   if (!inst) throw new Error(`Instance "${AMP_INSTANCE_NAME}" not found`);
-  return amp.instanceApi(inst.InstanceID);
+  return inst;
 }
 
-async function start(interaction, call) {
+// Log in to the main server. Returns null if the AMP instance is stopped.
+async function connect(inst) {
+  try {
+    return await amp.instanceApi(inst.InstanceID);
+  } catch (err) {
+    if (isInstanceStopped(err)) return null;
+    throw err;
+  }
+}
+
+// Start the AMP instance and wait until it accepts logins
+async function bootInstance(inst) {
+  await amp.startInstance(inst.InstanceName);
+
+  const deadline = Date.now() + INSTANCE_BOOT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await amp.wait(POLL_MS);
+    const call = await connect(inst).catch(() => null);
+    if (call) return call;
+  }
+  return null;
+}
+
+async function start(interaction, inst) {
+  let call = await connect(inst);
+
+  if (!call) {
+    await interaction.editReply('The AMP instance is stopped. Starting it...');
+    call = await bootInstance(inst);
+    if (!call) {
+      return interaction.editReply(
+        `The AMP instance didn't come up within ${INSTANCE_BOOT_TIMEOUT_MS / 60000} minutes. ` +
+        `Check the AMP panel, or run \`ampinstmgr start ${inst.InstanceName}\` on the host.`);
+    }
+  }
+
   const { State } = await call('Core/GetStatus');
 
   if (State === STATE.RUNNING) {
@@ -74,12 +112,18 @@ async function start(interaction, call) {
   return interaction.editReply('Server is taking longer than usual to start. Use `/server status` to check on it.');
 }
 
-async function stop(interaction, call) {
+async function stop(interaction, inst) {
+  const call = await connect(inst);
+  if (!call) return interaction.editReply('Server is already offline (the AMP instance is stopped).');
+
   await call('Core/Stop');
   return interaction.editReply('Minecraft server stopping...');
 }
 
-async function status(interaction, call) {
+async function status(interaction, inst) {
+  const call = await connect(inst);
+  if (!call) return interaction.editReply('Server is offline (the AMP instance is stopped). Use `/server start` to start it.');
+
   const result = await call('Core/GetStatus');
   const state = STATE_LABELS[result.State] ?? `in an unknown state (${result.State})`;
   let reply = `Server is ${state}.`;
@@ -110,8 +154,8 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const call = await mainServerApi();
-      await action(interaction, call);
+      const inst = await findMainInstance();
+      await action(interaction, inst);
     } catch (err) {
       console.error('AMP Error: ', err);
       await interaction.editReply(err.message);
