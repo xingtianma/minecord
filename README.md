@@ -1,66 +1,65 @@
 # Minecord
 
-A Discord bot that lets you manage a Minecraft server from your Discord server using slash commands. The server itself is run by [AMP](https://cubecoders.com/AMP) (CubeCoders' Application Management Panel), and the bot controls it through AMP's API.
+A Discord bot for running Minecraft servers from Discord. It controls a main server through [AMP](https://cubecoders.com/AMP) (CubeCoders' Application Management Panel), and it can spin up **temporary servers from saved maps** (a Mario Party map for game night, say) that delete themselves once everyone has left.
 
 ## Features
 
-- **Start / stop** the Minecraft server with a single command
-- **Smart start**: won't send a second start if the server is already online or starting, and edits its reply from "starting..." to "started!" once the server is up
-- **Status checks** that show the server's real state (online, sleeping, starting, stopping, etc.) and the player count when online
-- **Sleep mode aware**: if AMP has put the server to sleep, `/server start` wakes it up
-- **Access control**: only the owner and users on an allow list (stored in SQLite) can use the bot's commands
-- Built with [discord.js](https://discord.js.org/) v14 slash commands
+- **Main server control**: start, stop, and check the status of your main Minecraft server
+- **Smart start**: won't double-start a server, and edits its reply from "starting..." to "started!" when the server is up
+- **Map library**: save map zips (uploaded straight from Discord, or placed on the server) along with the Minecraft version and server settings each map needs
+- **Temporary servers**: `/play <map>` builds a fresh server with the right version, settings, and world, then replies with the address to join
+- **Automatic cleanup**: temporary servers fall asleep when empty and are deleted about 10 minutes after the last player leaves
+- **Access control**: only the owner and users on an allow list (stored in SQLite) can use the bot
 
 ## How It Works
 
 ```
-Discord  →  Minecord bot  →  AMP API  →  Minecraft instance
+Discord  →  Minecord bot  →  AMP API  →  Minecraft servers
+                 │
+                 ├── SQLite (access list, maps, temporary servers)
+                 └── maps/ folder (saved map zips)
 ```
 
-The bot logs in to AMP with the credentials in `.env`, finds the instance named in `AMP_INSTANCE`, and sends it start, stop, and status requests. AMP handles actually running Minecraft.
+The bot talks to AMP's HTTP API to start, stop, create, configure and delete servers. For `/play`, it also writes directly into the new server's folder on disk (to copy the world in), so **the bot must run on the same machine as AMP**.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/ping` | Health check, replies with "pong" |
-| `/server start` | Starts (or wakes) the Minecraft server, then updates the message when it's online |
-| `/server stop` | Stops the Minecraft server |
-| `/server status` | Shows the server's current state, plus the player count when online |
-| `/access add <user>` | Gives a user access to the bot (owner only) |
-| `/access remove <user>` | Removes a user's access (owner only) |
-| `/access list` | Lists the owner and every user with access (owner only) |
-
-All commands except `/ping` require access. See [Access Control](#access-control).
+| Command | Who | Description |
+|---------|-----|-------------|
+| `/ping` | Anyone | Health check |
+| `/server start` | Access list | Starts (or wakes) the main server, then updates the message when it's online |
+| `/server stop` | Access list | Stops the main server |
+| `/server status` | Access list | Shows the main server's state and player count |
+| `/play <map>` | Access list | Builds a temporary server for a saved map and replies with the address |
+| `/map list` | Access list | Lists saved maps |
+| `/map add` | Owner | Saves a map from a Discord attachment or a zip in the `maps/` folder |
+| `/map edit` | Owner | Changes a map's version, mode, settings, or file |
+| `/map files` | Owner | Lists zip files in the `maps/` folder |
+| `/map remove` | Owner | Removes a saved map (the zip file is kept) |
+| `/access add <user>` | Owner | Gives a user access to the bot |
+| `/access remove <user>` | Owner | Removes a user's access |
+| `/access list` | Owner | Lists users with access |
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v22+ (v24 LTS recommended). `better-sqlite3` requires Node 22 or newer, and crashes with a segmentation fault on older versions.
-- An [AMP](https://cubecoders.com/AMP) installation with a Minecraft Java Edition instance
-- An AMP user account with access to that instance
+- **Linux**, on the same machine (or container) as AMP
+- [Node.js](https://nodejs.org/) **v22+** (v24 LTS recommended). `better-sqlite3` crashes with a segmentation fault on older versions.
+- [AMP](https://cubecoders.com/AMP) with a Minecraft Java Edition instance for the main server
+- An AMP user account with access to the instances
 - A [Discord bot application](https://discord.com/developers/applications)
+- The bot must run as **root** (or a user that can write to `/home/amp/.ampdata/instances` and run `chown`)
 
 ## Getting Started
 
-### 1. Clone the repository
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/xingtianma/minecord.git
 cd minecord
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
 ```
 
-> **Windows:** if PowerShell says running scripts is disabled, run
-> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then try again.
-
-### 3. Configure environment variables
-
-Create a `.env` file in the project root:
+### 2. Configure `.env`
 
 ```env
 # Discord
@@ -74,53 +73,31 @@ AMP_URL=http://localhost:8080
 AMP_USER=your_amp_panel_username
 AMP_PASS=your_amp_panel_password
 AMP_INSTANCE=Minecraft01
+
+# Address shown to players by /play (optional, defaults to the LAN IP)
+MC_ADDRESS=your.public.ip.or.domain
 ```
 
 - `CLIENT_ID` is the **Application ID** from the Developer Portal's General Information page, not the Public Key.
-- `OWNER_ID` is your own Discord user ID. To copy it, turn on **User Settings → Advanced → Developer Mode**, then right-click your name and choose **Copy User ID**.
-- `AMP_URL` is the address of the AMP panel. Use `localhost` if AMP runs on the same machine as the bot.
+- `OWNER_ID` is your Discord user ID. Turn on **User Settings → Advanced → Developer Mode**, then right-click your name and choose **Copy User ID**.
 - `AMP_USER` / `AMP_PASS` are your **AMP panel** login, not your Linux login.
-- `AMP_INSTANCE` must match the instance's internal name exactly. See [Finding the instance name](#finding-the-instance-name).
+- `AMP_INSTANCE` is the main server's internal instance name. Find it with `su -l amp -c "ampinstmgr list"`.
+- `MC_ADDRESS` is what `/play` tells players to connect to. See [Letting Friends Join](#letting-friends-join).
 
-`.env` and `data/` are git-ignored. Never commit them, since they contain your bot token, AMP password, and the access list.
+`.env`, `data/` and `maps/` are git-ignored. Never commit them.
 
-### 4. Deploy slash commands
+### 3. Deploy slash commands and run
 
 ```bash
 node utils/deploy-commands.js
-```
-
-This registers the commands as **guild commands** for the server in `GUILD_ID`, so changes show up instantly.
-
-### 5. Run the bot
-
-```bash
 node index.js
 ```
 
-The bot only runs while this terminal is open. To keep it running permanently, see [Running as a service](#running-as-a-service).
-
-## Access Control
-
-Commands are restricted to the bot owner and an allow list stored in a SQLite database at `data/minecord.db`. The folder and database are created automatically the first time the bot starts.
-
-- **The owner** (`OWNER_ID` in `.env`) always has access and is the only one who can use `/access`. The owner isn't stored in the database, so you can't lock yourself out, even if the database is deleted.
-- **Other users** get access with `/access add @user` and lose it with `/access remove @user`.
-- **Public commands** are listed in `PUBLIC_COMMANDS` in `index.js` (currently just `ping`). Anyone can use those.
-
-The check runs in `index.js` before every command, so new commands are protected automatically.
-
-To view the table directly:
-
-```bash
-sqlite3 data/minecord.db "SELECT * FROM allowed_users;"
-```
-
-Discord IDs are stored as `TEXT`, because they're too large for JavaScript to represent exactly as numbers. All queries use `?` placeholders to prevent SQL injection.
+Commands are registered as **guild commands** for the server in `GUILD_ID`, so changes show up instantly.
 
 ## Running as a Service
 
-On a Linux server, run the bot with systemd so it starts on boot and restarts if it crashes. Create `/etc/systemd/system/minecord.service`:
+Create `/etc/systemd/system/minecord.service`:
 
 ```ini
 [Unit]
@@ -136,154 +113,150 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-Then enable it:
-
 ```bash
 systemctl daemon-reload
 systemctl enable --now minecord
 ```
 
-Useful commands:
+Day-to-day commands:
 
 ```bash
 systemctl status minecord      # is the bot running?
 journalctl -u minecord -f      # live logs
 systemctl restart minecord     # apply code or .env changes
-systemctl stop minecord        # take the bot offline
 ```
 
-Don't run the bot on your own computer while the service is running, or two copies will answer commands.
+Don't run a second copy of the bot (for example on your PC) while the service is running, or both will answer commands.
 
-## Updating the Bot
-
-After pulling new changes on the server:
+## Updating
 
 | What changed | What to run |
 |--------------|-------------|
-| Code inside a command, `index.js`, or `.env` | `systemctl restart minecord` |
-| Added a command, or changed a command's name, description, or options | `node utils/deploy-commands.js`, then restart |
-| Added an npm package | `npm install`, then restart |
+| Code inside a command, `utils/`, `index.js`, or `.env` | `systemctl restart minecord` |
+| A command was added, or a command's name, description, or options changed | `node utils/deploy-commands.js`, then restart |
+| An npm package was added | `npm install`, then restart |
 
-Or run everything at once:
+## Access Control
 
-```bash
-cd /opt/minecord && git pull && npm install && node utils/deploy-commands.js && systemctl restart minecord
-```
+The owner (`OWNER_ID`) always has access and is the only one who can manage maps and the access list. The owner isn't stored in the database, so you can't lock yourself out. Everyone else needs `/access add`. Commands listed in `PUBLIC_COMMANDS` in `index.js` (currently just `ping`) are open to all.
 
-## Utility Scripts
+The check runs in `index.js` before every command, so new commands are protected automatically.
 
-| Script | Description |
-|--------|-------------|
-| `node utils/deploy-commands.js` | Registers all commands as guild commands, replacing the existing list |
-| `node utils/clear-global-commands.js` | Removes any global commands (fixes duplicate commands in Discord) |
-| `node utils/delete-commands.js` | Removes all registered slash commands |
-| `node utils/refresh-commands.js` | Deletes then re-deploys all commands (full reset) |
+## Maps
 
-`deploy-commands.js` does a bulk overwrite: commands that no longer exist in the `commands/` folder are removed from Discord automatically.
+A saved map is a zip in `maps/` plus a database record describing how to run it:
+
+| Field | Example | Purpose |
+|-------|---------|---------|
+| name | `marioparty` | What you type in `/play` |
+| file | `mario-party-5618-v1.4.3.zip` | The zip in `maps/` |
+| world folder | `MarioParty` | Where `level.dat` is inside the zip (found automatically) |
+| version | `1.20.1` | The Minecraft version the server will run |
+| mode | `reset` | `reset` = fresh world every time; `persistent` = keep progress (not fully supported yet, see below) |
+| settings | `enable-command-block=true,difficulty=easy` | Server settings the map needs |
+
+### Adding a map
+
+**From Discord:** `/map add` with `name`, `version`, and the zip as `attachment`. Uploads are limited by your Discord account's upload limit (10 MB on free accounts) and by the bot's own limit (`MAX_UPLOAD_MB` in `map.js`, 500 MB by default).
+
+**From the server:** for big files, copy the zip into `maps/` first (drag it onto the folder in VS Code's Remote-SSH explorer, or use `scp`), then `/map add` with `name`, `version`, and `file`.
+
+Check the map's download page for the Minecraft version and any required settings. Many minigame maps need `enable-command-block=true`.
+
+## Temporary Servers
+
+`/play <map>` builds a new server in about a minute:
+
+1. Creates an AMP instance (AMP picks the name and port)
+2. Waits for it to come up, then stops Minecraft
+3. Applies the map's version, settings, and sleep mode
+4. Downloads that Minecraft version
+5. Replaces the world with the map's world, writes the remaining settings to `server.properties`, and accepts the EULA
+6. Starts the server and replies with the address
+
+If anything fails partway, the half-built server is deleted automatically.
+
+Only one temporary server can exist at a time (`MAX_TEMP_SERVERS` in `commands/utility/play.js`), to keep RAM in check.
+
+### Cleanup
+
+Every minute, the bot checks its temporary servers:
+
+- **Awake**: kept.
+- **Asleep or stopped**: a sleep timer starts. Temporary servers fall asleep after 5 minutes with nobody online.
+- **Asleep 5+ minutes and created 15+ minutes ago**: deleted.
+
+In practice, a server is deleted about 10 minutes after the last player leaves. The bot only ever deletes servers it created and recorded in its database. Servers made by hand in AMP are never touched.
+
+Persistent-mode maps are never deleted automatically, because saving the world back to the library isn't built yet.
+
+### Sleep mode
+
+A sleeping server uses almost no resources but keeps its port open. The first join attempt wakes it up, and joining works again after about 30 seconds.
+
+## Letting Friends Join
+
+`192.168.x.x` addresses only work on your home network. For friends elsewhere:
+
+1. **Forward ports** on your router to the bot's machine. Temporary servers get ports like 25566, 25567, and so on, so forward a small range (for example 25565–25570, TCP).
+2. **Set `MC_ADDRESS`** in `.env` to your public IP, or to a dynamic DNS name if your IP changes.
+
+If you'd rather not open ports, tools like Tailscale or playit.gg work without router changes.
 
 ## Project Structure
 
 ```
 minecord/
-├── index.js                          # Bot entry point: loads commands & handles interactions
-├── commands/
-│   └── utility/
-│       ├── access.js                 # /access add|remove|list (owner only)
-│       ├── ping.js                   # /ping command
-│       └── server.js                 # /server start|stop|status (talks to AMP)
+├── index.js                     # Entry point: loads commands, permission check, cleanup schedule
+├── commands/utility/
+│   ├── access.js                # /access
+│   ├── map.js                   # /map
+│   ├── ping.js                  # /ping
+│   ├── play.js                  # /play
+│   └── server.js                # /server (main server)
 ├── utils/
-│   ├── db.js                         # SQLite database and access-list helpers
-│   ├── deploy-commands.js            # Register slash commands with Discord
-│   ├── clear-global-commands.js      # Remove global commands
-│   ├── delete-commands.js            # Remove all slash commands
-│   └── refresh-commands.js           # Delete + re-deploy commands
-├── data/
-│   └── minecord.db                   # Access list database (git-ignored, created automatically)
-├── .env                              # Credentials (git-ignored)
-├── .gitignore
+│   ├── amp.js                   # AMP API helpers (login, create, delete, settings)
+│   ├── cleanup.js               # Deletes sleeping temporary servers
+│   ├── db.js                    # SQLite tables and queries
+│   ├── deploy-commands.js       # Registers slash commands with Discord
+│   ├── maps.js                  # Reads map zips (finds level.dat)
+│   ├── play.js                  # Builds a temporary server from a map
+│   └── test-*.js                # Manual test scripts (see below)
+├── data/minecord.db             # Database (git-ignored, created automatically)
+├── maps/                        # Saved map zips (git-ignored)
+├── .env                         # Credentials (git-ignored)
 └── package.json
 ```
 
-## Adding New Commands
+### Test scripts
 
-1. Create a `.js` file in a category folder inside `commands/` (for example `commands/utility/`).
-2. Export an object with `data` (a `SlashCommandBuilder`) and an `execute` function:
-
-```js
-const { SlashCommandBuilder } = require('discord.js');
-
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('mycommand')
-    .setDescription('Does something cool'),
-  async execute(interaction) {
-    await interaction.reply('Hello!');
-  }
-};
-```
-
-3. Deploy the commands and restart the bot:
-
-```bash
-node utils/deploy-commands.js
-systemctl restart minecord
-```
-
-## AMP Setup
-
-### Installing AMP
-
-On a Linux server, as root:
-
-```bash
-bash <(wget -qO- getamp.sh)
-```
-
-Say yes to installing Java for Minecraft. Then open `http://<server-ip>:8080`, complete the setup wizard with your license key, and create a **Minecraft Java Edition** instance.
-
-If AMP runs inside a Proxmox LXC container with Docker isolation enabled, turn on **Nesting** and **keyctl** under the container's Options → Features.
-
-### Finding the instance name
-
-The bot matches AMP's internal instance name, which may differ from the name shown in the web panel. List the real names with:
-
-```bash
-su -l amp -c "ampinstmgr list"
-```
-
-Copy the **Instance Name** into `AMP_INSTANCE`.
-
-### Sleep mode
-
-AMP can put Minecraft to sleep when nobody is playing. While sleeping, the server uses almost no resources but keeps its port open. The first join attempt wakes it up, and joining works again after roughly 30 seconds. `/server status` reports this as "sleeping", and `/server start` wakes it. Sleep mode can be turned off in the instance's settings in AMP.
+| Script | What it does |
+|--------|--------------|
+| `node utils/test-amp` | Lists AMP instances (read-only) |
+| `node utils/test-map <zip>` | Shows where the world is inside a zip in `maps/` (read-only) |
+| `node utils/test-settings` | Prints key settings of `Minecraft01` (read-only) |
+| `node utils/test-play <map>` | Builds a temporary server without Discord |
+| `node utils/test-create delete <InstanceName>` | Deletes a server whose display name starts with `minecord-test-` |
+| `node utils/test-cleanup` | Runs the cleanup check in trial mode (deletes nothing) |
 
 ## Troubleshooting
 
-| Error | Cause |
-|-------|-------|
-| `AMP login failed for user "..."` | `AMP_USER` or `AMP_PASS` is wrong. Use your AMP panel login. |
-| `Instance "..." not found` | `AMP_INSTANCE` doesn't match a name from `ampinstmgr list` |
-| `Instance login failed` | The AMP user doesn't have access to that instance |
-| `AMP HTTP ...` or connection errors | AMP isn't running, or `AMP_URL` is wrong |
-| Commands appear twice in Discord | Old global commands exist. Run `node utils/clear-global-commands.js`. |
-| `Connection refused` in Minecraft | The server is stopped or still waking up. Check `/server status`. |
-| Bot crashes with `status=11` (segmentation fault) | Node is older than v22. Upgrade Node, then `rm -rf node_modules && npm install`. |
-| "You don't have permission to use this command." | The user isn't on the allow list. The owner can run `/access add @user`. |
-| A new command doesn't appear in Discord | Run `node utils/deploy-commands.js`, then refresh Discord (Ctrl+R on Windows, Cmd+R on Mac). |
+| Problem | Cause |
+|---------|-------|
+| `AMP login failed for user "..."` | `AMP_USER` / `AMP_PASS` are wrong. Use the AMP panel login. |
+| `Instance "..." not found` | `AMP_INSTANCE` doesn't match `ampinstmgr list` |
+| Bot crashes with `status=11` | Node is older than v22. Upgrade, then `rm -rf node_modules && npm install`. |
+| A new command doesn't appear | Run `node utils/deploy-commands.js`, then refresh Discord (Ctrl+R / Cmd+R) |
+| Commands appear twice | Old global commands exist alongside guild commands. Clear the global ones. |
+| `/play` says a server is already running | The one-server limit. Wait for cleanup, or delete the server and its record. |
+| `/play` times out or says AMP is waiting for input | Check the new instance's console in the AMP panel |
+| Map board doesn't work | Command blocks are probably off. `/map edit` with `properties: enable-command-block=true`. |
+| `Connection refused` in Minecraft | The server is asleep and waking, or stopped. Wait 30 seconds and try again. |
+| Push rejected for a large file | A map zip was committed. Make sure `maps/` is in `.gitignore`, then untrack it with `git rm -r --cached maps`. |
 
 ## Backups
 
-`data/minecord.db` and `.env` exist only on the server, not in Git. If the bot runs in a Proxmox container, back up the whole container (select it, go to **Backup**, then **Backup now**), or schedule automatic backups under **Datacenter → Backup**.
-
-## Setting Up the Discord Bot
-
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Click **New Application** and give it a name.
-3. Copy the **Application ID** from General Information into `CLIENT_ID`.
-4. Go to **Bot**, click **Reset Token**, and copy it into `DISCORD_TOKEN`.
-5. Optionally, turn off **Public Bot** so only you can invite it.
-6. Under **OAuth2 → URL Generator**, select the `bot` and `applications.commands` scopes, plus at least the Send Messages permission.
-7. Open the generated URL to invite the bot to your server.
+`.env`, `data/` and `maps/` exist only on the server. If the bot runs in a Proxmox container, back up the whole container, or schedule backups under **Datacenter → Backup**.
 
 ## License
 
